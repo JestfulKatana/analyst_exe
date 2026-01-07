@@ -1,0 +1,26 @@
+{
+  "ollama": {
+    "model": "llama3.2:3b",
+    "url": "http://localhost:11434/api/generate",
+    "timeout": 60,
+    "temperature": 0.1
+  },
+  "scoring": {
+    "weights": {
+      "education_match": 25,
+      "experience_match": 25,
+      "hard_skills_match": 40,
+      "soft_skills_match": 10
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "job_matcher.log",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  },
+  "output": {
+    "save_results": true,
+    "results_dir": "results",
+    "include_debug": true
+  }
+}
