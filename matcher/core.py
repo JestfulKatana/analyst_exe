@@ -2,33 +2,22 @@
 # -*- coding: utf-8 -*-
 """
 SmartJobMatcher - Умный матчер вакансий и резюме на основе LLM.
-
-DEPRECATED: Этот файл оставлен для обратной совместимости.
-Используйте вместо этого: from matcher import SmartJobMatcher, Config
+Основной модуль с классом SmartJobMatcher.
 """
 
+import json
 import logging
-from matcher import SmartJobMatcher, Config
+import requests
+from typing import Dict, Any, Optional
+from datetime import datetime
+from pathlib import Path
 
-# Настройка логирования для обратной совместимости
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('job_matcher.log'),
-        logging.StreamHandler()
-    ]
-)
+from .config import Config
+
 logger = logging.getLogger(__name__)
 
 
-# Для обратной совместимости экспортируем класс
-__all__ = ['SmartJobMatcher', 'Config']
-
-
-# Старый код ниже (закомментирован, оставлен для истории)
-"""
-class SmartJobMatcher_OLD:
+class SmartJobMatcher:
     """
     Класс для интеллектуального сопоставления вакансий и резюме.
 
@@ -38,31 +27,30 @@ class SmartJobMatcher_OLD:
 
     def __init__(
         self,
-        ollama_model: str = "llama3.2:3b",
-        ollama_url: str = "http://localhost:11434/api/generate",
-        timeout: int = 60
+        config: Optional[Config] = None,
+        ollama_model: Optional[str] = None,
+        ollama_url: Optional[str] = None,
+        timeout: Optional[int] = None
     ):
         """
         Инициализация матчера.
 
         Args:
-            ollama_model: Название модели Ollama
-            ollama_url: URL Ollama API
-            timeout: Таймаут для запросов к LLM (сек)
+            config: Объект конфигурации (если None, используются настройки по умолчанию)
+            ollama_model: Название модели Ollama (переопределяет config)
+            ollama_url: URL Ollama API (переопределяет config)
+            timeout: Таймаут для запросов к LLM в секундах (переопределяет config)
         """
-        self.ollama_url = ollama_url
-        self.ollama_model = ollama_model
-        self.timeout = timeout
+        # Инициализация конфигурации
+        self.config = config or Config()
 
-        # Настройки весов для скоринга
-        self.weights = {
-            'education_match': 25,
-            'experience_match': 25,
-            'hard_skills_match': 40,  # Будет распределено на количество навыков
-            'soft_skills_match': 10,
-        }
+        # Переопределение параметров если они указаны явно
+        self.ollama_model = ollama_model or self.config.ollama_model
+        self.ollama_url = ollama_url or self.config.ollama_url
+        self.timeout = timeout or self.config.ollama_timeout
+        self.weights = self.config.weights.copy()
 
-        logger.info(f"Инициализирован SmartJobMatcher с моделью {ollama_model}")
+        logger.info(f"Инициализирован SmartJobMatcher с моделью {self.ollama_model}")
 
         # Проверка доступности Ollama
         self._check_ollama_availability()
@@ -101,7 +89,7 @@ class SmartJobMatcher_OLD:
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.1  # Минимум случайности
+                "temperature": self.config.get("ollama.temperature", 0.1)
             }
         }
 
@@ -395,11 +383,12 @@ class SmartJobMatcher_OLD:
                 )
 
             # Добавляем отладочную информацию
-            result['debug'] = {
-                'parsed_job': job_data,
-                'parsed_resume': resume_data,
-                'timestamp': datetime.now().isoformat()
-            }
+            if self.config.get("output.include_debug", True):
+                result['debug'] = {
+                    'parsed_job': job_data,
+                    'parsed_resume': resume_data,
+                    'timestamp': datetime.now().isoformat()
+                }
 
             logger.info("✓ Анализ завершён успешно")
             return result
@@ -430,86 +419,18 @@ class SmartJobMatcher_OLD:
             Путь к сохранённому файлу
         """
         if filepath is None:
+            # Создание директории для результатов
+            results_dir = Path(self.config.get("output.results_dir", "results"))
+            results_dir.mkdir(exist_ok=True)
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filepath = f"match_result_{timestamp}.json"
+            filepath = results_dir / f"match_result_{timestamp}.json"
 
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             logger.info(f"Результат сохранён в {filepath}")
-            return filepath
+            return str(filepath)
         except Exception as e:
             logger.error(f"Ошибка при сохранении результата: {e}")
             raise
-
-
-"""
-
-
-def main():
-    """Демонстрация работы SmartJobMatcher."""
-
-    # Пример вакансии
-    job = """
-    Обязанности:
-    Самостоятельно осваивает новые и используемые в лаборатории методики.
-    Проводит лабораторные анализы, испытания и другие виды исследований.
-    Ведет документацию: протоколы испытаний, рабочие журналы, отчеты.
-    Следит за правильной эксплуатацией лабораторного оборудования.
-
-    Требования:
-    Образование: высшее профессиональное (химическое, биотехнологическое).
-    Опыт работы: от 3 лет.
-    Уверенное владение компьютером (Word, Excel).
-    Личностные качества: коммуникабельность, быстрая обучаемость.
-    Необходимо знать: оборудование лаборатории, стандарты, технологию производства.
-    """
-
-    # Пример резюме
-    resume = """
-    Образование: МГУ, специальность "Биотехнология".
-    Опыт: 2 года 6 месяцев в лаборатории ПАО "ФармСинтез".
-    Навыки: Работа с хроматографами и спектрофотометрами, оформление протоколов по ГОСТ,
-    опыт валидации методик, знание основ производства лекарственных средств.
-    Владение ПК: Уверенный пользователь MS Office (Word, Excel, PowerPoint).
-    Дополнительно: Ответственный, легко осваиваю новые методики, коммуникабельный.
-    """
-
-    # Инициализация и запуск
-    print("🚀 Запуск SmartJobMatcher...")
-    print("⚠️  Убедитесь, что Ollama запущен: ollama serve")
-    print("⚠️  И модель загружена: ollama pull llama3.2:3b\n")
-
-    # Загрузка конфигурации
-    config = Config("config.json")
-    matcher = SmartJobMatcher(config=config)
-    result = matcher.match(job, resume)
-
-    # Вывод результатов
-    print("\n" + "="*60)
-    print(f"🎯 ИТОГОВЫЙ СКОР: {result['score']}/100")
-    print("="*60)
-
-    if 'feedback' in result:
-        print(f"\n💬 Фидбэк:\n{result['feedback']}\n")
-
-    print("\n📊 Детали оценки:")
-    for category, score in result['report']['score_details'].items():
-        print(f"  • {category}: {score}")
-
-    print("\n✅ Сильные стороны:")
-    for item in result['report']['strengths'][:10]:
-        print(f"  {item}")
-
-    if result['report']['missing_required']:
-        print("\n❌ Отсутствующие требования:")
-        for item in result['report']['missing_required'][:10]:
-            print(f"  {item}")
-
-    # Сохранение результата
-    saved_path = matcher.save_result(result)
-    print(f"\n💾 Результат сохранён: {saved_path}")
-
-
-if __name__ == "__main__":
-    main()
